@@ -1,0 +1,115 @@
+% NOTE: This template uses IEEEtran (ICDM format).
+% For KDD format instead, swap to ACM acmart:
+%   \documentclass[sigconf]{acmart}
+% and replace \IEEEauthorblockN/\IEEEauthorblockA with acmart's \author/\affiliation.
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+
+\begin{document}
+
+\title{Graph Neural Networks for Fraud Detection: A Survey and an
+Imbalance-Aware Approach}
+
+\author{\IEEEauthorblockN{Author Name}
+\IEEEauthorblockA{\textit{Department of Computer Science} \\
+\textit{University Name}\\
+City, Country \\
+email@example.com}
+}
+
+\maketitle
+
+\begin{abstract}
+Fraud detection in online services can be formulated as semi-supervised node
+classification on graphs, where fraudsters are heavily outnumbered and
+actively camouflage themselves among benign users. This report surveys
+representative graph-based fraud detection methods --- from the dense-block
+detector FRAUDAR to graph neural network (GNN) approaches such as SemiGNN,
+CARE-GNN, and PC-GNN --- and outlines an imbalance-aware GNN approach to be
+implemented and evaluated on the YelpChi and Amazon fraud datasets. We adopt
+AUROC, AUPRC, and F1-macro as evaluation metrics, which are standard in this
+line of work.
+\end{abstract}
+
+\begin{IEEEkeywords}
+graph neural networks, fraud detection, anomaly detection, class imbalance,
+semi-supervised learning
+\end{IEEEkeywords}
+
+\section{Introduction}
+Online review and e-commerce platforms lose revenue and user trust to
+fraudulent accounts. Because fraudsters deliberately mimic benign behavior
+(\emph{camouflage})~\cite{DBLP:conf/kdd/HooiSBSSF16}, purely feature-based
+detectors are easily evaded. Modeling users, reviews, and products as a graph
+and applying graph neural networks (GNNs) has therefore become a dominant
+paradigm; deep graph anomaly detection more broadly is surveyed
+in~\cite{DBLP:journals/tkde/MaWXYZSXA23}. Two challenges are central: (1)
+extreme class imbalance between fraudsters and benign users, and (2)
+camouflage along both feature and relation dimensions. This project studies
+GNN-based fraud detectors that explicitly address these challenges.
+
+\section{Related Work}
+\subsection{Graph-based Fraud and Anomaly Detection}
+FRAUDAR~\cite{DBLP:conf/kdd/HooiSBSSF16} detects dense subgraphs (a hallmark
+of lockstep fraudulent behavior) while remaining robust to camouflage edges
+added to honest nodes. Ma et al.~\cite{DBLP:journals/tkde/MaWXYZSXA23} provide
+a comprehensive survey of deep learning approaches to graph anomaly detection,
+organizing methods by the type of anomalies (node, edge, subgraph) and model
+architecture.
+\subsection{GNN-based Fraud Detectors}
+SemiGNN~\cite{DBLP:conf/icdm/WangQL0JWFYZY19} is a semi-supervised graph
+attentive network for financial fraud detection that uses a hierarchical
+attention mechanism and a labeled-neighbor-based regularizer.
+CARE-GNN~\cite{DBLP:conf/cikm/DouL0DPY20} enhances GNN fraud detectors
+against camouflaged fraudsters via a label-aware similarity measure and
+reinforcement-learning-based neighbor selection.
+PC-GNN~\cite{DBLP:conf/www/LiuAQCFYH21} tackles class imbalance by
+``picking'' a balanced neighborhood and ``choosing'' neighbors for
+aggregation, yielding an imbalanced-learning GNN for fraud detection.
+
+\section{Problem Definition}
+Let $G = (\mathcal{V}, \mathcal{E}, \mathbf{X})$ be an attributed graph with
+node set $\mathcal{V}$, edge set $\mathcal{E}$, and node feature matrix
+$\mathbf{X} \in \mathbb{R}^{|\mathcal{V}| \times d}$. Each node
+$v \in \mathcal{V}$ has a label $y_v \in \{0, 1\}$ ($1$ = fraudster), of which
+only a small labeled subset $\mathcal{V}_L \subset \mathcal{V}$ is observed,
+with $|\{v : y_v = 1\}| \ll |\{v : y_v = 0\}|$ (class imbalance). The task is
+\emph{semi-supervised node classification}: learn
+$f : \mathcal{V} \rightarrow [0, 1]$ from $G$ and $\mathcal{V}_L$ that ranks
+fraudulent nodes above benign ones on the unlabeled nodes.
+
+\section{Proposed Method}
+TODO: We plan to implement an imbalance-aware GNN combining (i)
+camouflage-resistant neighbor selection in the spirit of
+CARE-GNN~\cite{DBLP:conf/cikm/DouL0DPY20} and (ii) balanced neighborhood
+sampling as in PC-GNN~\cite{DBLP:conf/www/LiuAQCFYH21}, trained with a
+semi-supervised objective following SemiGNN~\cite{DBLP:conf/icdm/WangQL0JWFYZY19}.
+
+\section{Experiments}
+\subsection{Datasets}
+We use two public benchmarks: \textbf{YelpChi} ( Yelp review spam, relations:
+R-U-R, R-S-R, R-T-R) and \textbf{Amazon} (Amazon product review fraud,
+relations: U-P-U, U-S-U, U-V-V), both released with
+CARE-GNN~\cite{DBLP:conf/cikm/DouL0DPY20}.
+\subsection{Baselines}
+GCN, SemiGNN~\cite{DBLP:conf/icdm/WangQL0JWFYZY19},
+CARE-GNN~\cite{DBLP:conf/cikm/DouL0DPY20}, and
+PC-GNN~\cite{DBLP:conf/www/LiuAQCFYH21}.
+\subsection{Metrics}
+AUROC, AUPRC, and F1-macro, the standard metrics for this
+benchmark~\cite{DBLP:conf/cikm/DouL0DPY20,DBLP:conf/www/LiuAQCFYH21}.
+
+\section{Conclusion and Future Work}
+TODO: summarize findings after experiments; future work includes exploring
+heterophily-aware GNNs and cost-sensitive learning for fraud detection.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
