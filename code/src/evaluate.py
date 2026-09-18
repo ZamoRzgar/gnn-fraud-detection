@@ -3,20 +3,26 @@
 """
 
 import numpy as np
+from sklearn.metrics import average_precision_score, f1_score, roc_auc_score
 
 
 def auroc(y_true: np.ndarray, y_score: np.ndarray) -> float:
-    raise NotImplementedError("sklearn.metrics.roc_auc_score")
+    return float(roc_auc_score(y_true, y_score))
 
 
 def auprc(y_true: np.ndarray, y_score: np.ndarray) -> float:
-    raise NotImplementedError("sklearn.metrics.average_precision_score")
+    return float(average_precision_score(y_true, y_score))
 
 
 def f1_macro(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    raise NotImplementedError("sklearn.metrics.f1_score(average='macro')")
+    return float(f1_score(y_true, y_pred, average="macro"))
 
 
 def recall_at_k(y_true: np.ndarray, y_score: np.ndarray, k: int) -> float:
     """Recall among the top-k highest-scoring (most suspicious) nodes."""
-    raise NotImplementedError
+    k = min(k, len(y_true))
+    top_k = np.argsort(y_score)[::-1][:k]
+    positives = y_true.sum()
+    if positives == 0:
+        return 0.0
+    return float(y_true[top_k].sum() / positives)
