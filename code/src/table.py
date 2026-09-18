@@ -22,23 +22,23 @@ def load_rows():
 
 
 def best_rows(rows):
-    """Keep the run with the highest test AUROC per (dataset, model)."""
+    """Keep the run with the highest test AUROC per (dataset, model, class_weight)."""
     best = {}
     for r in rows:
-        key = (r["dataset"], r["model"])
+        key = (r["dataset"], r["model"], r.get("class_weight", "1"))
         if key not in best or float(r["test_auroc"]) > float(best[key]["test_auroc"]):
             best[key] = r
-    return sorted(best.values(), key=lambda r: (r["dataset"], r["model"]))
+    return sorted(best.values(), key=lambda r: (r["dataset"], r["model"], r.get("class_weight", "1")))
 
 
 def print_table(rows):
-    header = ["dataset", "model", "seed", "aux_w"] + METRICS
+    header = ["dataset", "model", "seed", "aux_w", "cw"] + METRICS
     cols = {"dataset": "dataset", "model": "model", "seed": "seed", "aux_w": "aux_weight",
-            **{m: m for m in METRICS}}
+            "cw": "class_weight", **{m: m for m in METRICS}}
     lines = ["| " + " | ".join(header) + " |",
              "|" + "|".join("---" for _ in header) + "|"]
     for r in rows:
-        lines.append("| " + " | ".join(r[cols[h]] for h in header) + " |")
+        lines.append("| " + " | ".join(r.get(cols[h], "") for h in header) + " |")
     print("\n".join(lines))
 
 

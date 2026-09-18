@@ -46,7 +46,12 @@ GB of RAM.
     similarity, top `keep_ratio` kept) and (b) PC-GNN-style balanced
     sampling (degree cap + fraud-favoring weighted sampling using training
     labels), then (c) attention aggregation within each relation and
-    attention fusion across relations.
+    attention fusion across relations. Two ablation variants are registered
+    under their own names: `ours_nofilter` (component (a) disabled — the
+    similarity MLPs are not built at all, so the parameter count is honest,
+    and `aux_loss` is a no-op) and `ours_nosampler` (the fraud-boosted
+    weighting in (b) disabled — the degree cap stays with uniform sampling,
+    isolating the fraud-bias effect rather than the cap).
   - `build_model(name, in_dim)` is the single construction entry point
     (`"gcn"`, `"semignn"`, `"ours"`).
 - `train.py` — argparse entry point (`python -m src.train --dataset …

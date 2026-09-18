@@ -24,7 +24,11 @@ RESULTS_CSV = Path(__file__).resolve().parent.parent / "results" / "results.csv"
 def parse_args():
     p = argparse.ArgumentParser(description="GNN fraud detection training")
     p.add_argument("--dataset", choices=["yelp", "amazon"], required=True)
-    p.add_argument("--model", choices=["gcn", "semignn", "ours"], default="gcn")
+    p.add_argument(
+        "--model",
+        choices=["gcn", "semignn", "ours", "ours_nofilter", "ours_nosampler"],
+        default="gcn",
+    )
     p.add_argument("--epochs", type=int, default=100)
     p.add_argument("--hidden", type=int, default=64)
     p.add_argument("--lr", type=float, default=0.01)
@@ -34,6 +38,12 @@ def parse_args():
         type=float,
         default=0.1,
         help="weight of the model's aux_loss (0 disables it)",
+    )
+    p.add_argument(
+        "--no_cw",
+        action="store_true",
+        help="disable class-weighted cross-entropy; with a sampler model this "
+        "makes balanced sampling the only imbalance mechanism",
     )
     return p.parse_args()
 
@@ -77,11 +87,12 @@ def main():
     model = build_model(args.model, in_dim=data.num_features, hidden_dim=args.hidden)
 
     # Inverse-class-frequency weights (computed on the training split) to
-    # counter the strong imbalance toward the benign class.
+    # counter the strong imbalance toward the benign class. --no_cw disables
+    # this so balanced sampling (if the model has it) is the only mechanism.
     y_train = data.y[data.train_mask]
     counts = torch.bincount(y_train, minlength=2).float()
-    class_weight = counts.sum() / (2.0 * counts)
-    print(f"train class counts: {counts.tolist()}, weights: {class_weight.tolist()}")
+    class_weight = None if args.no_cw else counts.sum() / (2.0 * counts)
+    print(f"train class counts: {counts.tolist()}, class_weight: {class_weight}")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
@@ -131,6 +142,7 @@ def save_result(args, best_val_auroc, test):
         "lr": args.lr,
         "seed": args.seed,
         "aux_weight": args.aux_weight,
+        "class_weight": 0 if args.no_cw else 1,
         "best_val_auroc": round(best_val_auroc, 4),
         "test_auroc": round(test["auroc"], 4),
         "test_auprc": round(test["auprc"], 4),
