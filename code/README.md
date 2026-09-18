@@ -22,13 +22,19 @@ Place the `.mat` files under `data/` (gitignored). See `src/data.py`.
 python -m src.train --dataset yelp --model gcn --epochs 100
 python -m src.train --dataset amazon --model semignn --epochs 100
 python -m src.train --dataset yelp --model ours --epochs 100
+# ablation variants of the proposed model:
+python -m src.train --dataset yelp --model ours_nofilter --epochs 100
+python -m src.train --dataset yelp --model ours_nosampler --epochs 100
 ```
 
 Models: `gcn` (2-layer GCN on the flattened homo graph), `semignn`
 (multi-view hierarchical attention + semi-supervised graph loss; aux loss
 weight via `--aux_weight`, 0 disables), `ours` (imbalance- and
 camouflage-aware multi-relation GNN; CARE-GNN-style similarity filtering +
-PC-GNN-style balanced sampling).
+PC-GNN-style balanced sampling), and its ablations `ours_nofilter`
+(similarity filtering removed) and `ours_nosampler` (fraud-bias of the
+sampler removed, uniform sampling within the same degree cap). Every run
+appends its config + metrics to `results/results.csv`.
 
 `verify_setup.py` runs a one-pass shape/gradient smoke test for all models
 on both datasets (not a training run).

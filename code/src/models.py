@@ -245,6 +245,16 @@ class ImbalanceAwareGNN(nn.Module):
     are therefore trained with label supervision instead — see aux_loss(),
     which teaches the scorers to predict whether a neighbor shares the center
     node's label (camouflaged fraud neighbors should score low).
+
+    Ablation flags (registered in build_model() as separate model names):
+    - use_filter=False ("ours_nofilter"): step (a) is bypassed — no
+      similarity MLPs are built at all (honest parameter count) and all
+      neighbors pass through to the sampler. aux_loss() becomes a no-op
+      (there is nothing left to supervise).
+    - use_sampler=False ("ours_nosampler"): the fraud-boosted weighting in
+      step (b) is disabled; the degree cap stays, with uniform sampling
+      within the cap, so the variant isolates the fraud-bias effect rather
+      than the cap. Labels are not consumed (needs_labels=False).
     """
 
     uses_relations = True
@@ -259,19 +269,26 @@ class ImbalanceAwareGNN(nn.Module):
         keep_ratio: float = 0.5,
         max_degree: int = 32,
         fraud_boost: float = 4.0,
+        use_filter: bool = True,
+        use_sampler: bool = True,
     ):
         super().__init__()
         self.input_proj = nn.Linear(in_dim, hidden_dim)
         # (a) per-relation similarity scorers: [h_u | h_i] -> similarity logit
-        self.sim_mlps = nn.ModuleList(
-            [
-                nn.Sequential(
-                    nn.Linear(2 * hidden_dim, hidden_dim),
-                    nn.ReLU(),
-                    nn.Linear(hidden_dim, 1),
-                )
-                for _ in range(num_relations)
-            ]
+        # (not built in the "ours_nofilter" ablation)
+        self.sim_mlps = (
+            nn.ModuleList(
+                [
+                    nn.Sequential(
+                        nn.Linear(2 * hidden_dim, hidden_dim),
+                        nn.ReLU(),
+                        nn.Linear(hidden_dim, 1),
+                    )
+                    for _ in range(num_relations)
+                ]
+            )
+            if use_filter
+            else None
         )
         # per-relation attention matrices for aggregation
         self.attn_mats = nn.Parameter(
@@ -284,27 +301,33 @@ class ImbalanceAwareGNN(nn.Module):
         self.keep_ratio = keep_ratio
         self.max_degree = max_degree
         self.fraud_boost = fraud_boost
+        self.use_filter = use_filter
+        self.use_sampler = use_sampler
+        # the fraud-bias sampler is the only label consumer
+        self.needs_labels = use_sampler
         self.max_aux_pairs = 50_000
         self._h = None
 
     def _filter_and_sample(self, h, edge_index, sim_mlp, num_nodes, y, train_mask):
-        """Steps (a) and (b): similarity filtering, then fraud-biased
-        degree-capped sampling. Returns the kept edge subset."""
+        """Steps (a) and (b): similarity filtering (if enabled), then
+        degree-capped sampling (fraud-biased if enabled). Returns the kept
+        edge subset."""
         # (a) similarity filtering: keep top keep_ratio per center node
-        def sim_fn(src, dst):
-            return sim_mlp(torch.cat([h[src], h[dst]], dim=-1)).squeeze(-1)
+        if sim_mlp is not None:
+            def sim_fn(src, dst):
+                return sim_mlp(torch.cat([h[src], h[dst]], dim=-1)).squeeze(-1)
 
-        sim = _edge_scores(edge_index, sim_fn)
-        dst = edge_index[1]
-        deg = torch.bincount(dst, minlength=num_nodes)
-        keep_k = (deg.float() * self.keep_ratio).ceil().long()
-        keep = _topk_mask_per_node(dst, sim, keep_k, num_nodes)
-        edge_index = edge_index[:, keep]
+            sim = _edge_scores(edge_index, sim_fn)
+            dst = edge_index[1]
+            deg = torch.bincount(dst, minlength=num_nodes)
+            keep_k = (deg.float() * self.keep_ratio).ceil().long()
+            keep = _topk_mask_per_node(dst, sim, keep_k, num_nodes)
+            edge_index = edge_index[:, keep]
 
         # (b) balanced sampling: cap degree, favor known-fraud neighbors
         if self.max_degree is not None and edge_index.shape[1] > 0:
             w = torch.ones(edge_index.shape[1], device=h.device)
-            if y is not None and train_mask is not None:
+            if self.use_sampler and y is not None and train_mask is not None:
                 known_fraud = train_mask[edge_index[0]] & (y[edge_index[0]] == 1)
                 w = w + self.fraud_boost * known_fraud.float()
             if self.training:
@@ -326,7 +349,12 @@ class ImbalanceAwareGNN(nn.Module):
         views = []
         for r, rel in enumerate(sorted(relation_edge_index)):
             ei = self._filter_and_sample(
-                h, relation_edge_index[rel], self.sim_mlps[r], num_nodes, y, train_mask
+                h,
+                relation_edge_index[rel],
+                self.sim_mlps[r] if self.use_filter else None,
+                num_nodes,
+                y,
+                train_mask,
             )
             agg = _dot_attention_aggregate(h, ei, self.attn_mats[r], num_nodes)
             views.append(F.relu(agg + h))  # residual self-connection
@@ -343,9 +371,13 @@ class ImbalanceAwareGNN(nn.Module):
         """Label-aware similarity supervision (CARE-GNN): trains each
         relation's similarity MLP to predict whether a neighbor has the same
         label as the center node, over edges where both endpoints are labeled
-        (train) nodes. Must be called after forward() in the same iteration."""
+        (train) nodes. Must be called after forward() in the same iteration.
+        No-op (zero) in the "ours_nofilter" ablation, which has no
+        similarity MLPs to supervise."""
         assert self._h is not None, "call forward() before aux_loss()"
         h = self._h
+        if not self.use_filter:
+            return h.sum() * 0.0
         y, train_mask = data.y, data.train_mask
         losses = []
         for r, rel in enumerate(sorted(data.relation_edge_index)):
@@ -366,7 +398,16 @@ class ImbalanceAwareGNN(nn.Module):
 
 
 def build_model(name: str, in_dim: int, **kwargs) -> nn.Module:
-    models = {"gcn": GCNBaseline, "semignn": SemiGNN, "ours": ImbalanceAwareGNN}
+    # name -> (class, fixed constructor kwargs); the two ours_* entries are
+    # ablation variants of ImbalanceAwareGNN.
+    models = {
+        "gcn": (GCNBaseline, {}),
+        "semignn": (SemiGNN, {}),
+        "ours": (ImbalanceAwareGNN, {}),
+        "ours_nofilter": (ImbalanceAwareGNN, {"use_filter": False}),
+        "ours_nosampler": (ImbalanceAwareGNN, {"use_sampler": False}),
+    }
     if name not in models:
         raise ValueError(f"unknown model: {name!r} (choices: {sorted(models)})")
-    return models[name](in_dim, **kwargs)
+    cls, fixed_kwargs = models[name]
+    return cls(in_dim, **fixed_kwargs, **kwargs)

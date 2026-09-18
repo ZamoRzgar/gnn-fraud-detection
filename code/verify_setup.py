@@ -1,5 +1,6 @@
-"""Shape/gradient smoke test: loads both datasets, builds all three models,
-runs one forward + backward pass each, and prints per-relation edge counts.
+"""Shape/gradient smoke test: loads both datasets, builds every registered
+model (including the ours_* ablation variants), runs one forward + backward
+pass each, and prints per-relation edge counts and parameter counts.
 
 NOT a training run — one optimizer-free backward pass per model.
 
@@ -13,6 +14,8 @@ from src.data import load_dataset
 from src.models import build_model
 from src.train import model_forward
 
+MODELS = ["gcn", "semignn", "ours", "ours_nofilter", "ours_nosampler"]
+
 for dataset in ["yelp", "amazon"]:
     data = load_dataset(dataset)
     print(f"\n=== {dataset}: nodes={data.num_nodes} feats={data.num_features} "
@@ -20,7 +23,7 @@ for dataset in ["yelp", "amazon"]:
     for rel, ei in sorted(data.relation_edge_index.items()):
         print(f"  relation {rel}: {ei.shape[1]} edges")
 
-    for model_name in ["gcn", "semignn", "ours"]:
+    for model_name in MODELS:
         torch.manual_seed(0)
         model = build_model(model_name, in_dim=data.num_features)
         model.train()
@@ -37,9 +40,11 @@ for dataset in ["yelp", "amazon"]:
             1 for p in model.parameters() if p.grad is not None and p.grad.abs().sum() > 0
         )
         n_params = sum(1 for _ in model.parameters())
+        n_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(
-            f"  {model_name:8s} logits {tuple(logits.shape)} "
+            f"  {model_name:14s} logits {tuple(logits.shape)} "
             f"loss {loss.item():.4f} | params with nonzero grad: {n_with_grad}/{n_params}"
+            f" | trainable params: {n_trainable}"
         )
 
 print("\nOK: all models forward/backward on both datasets.")
