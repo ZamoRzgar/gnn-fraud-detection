@@ -2,10 +2,31 @@
 
 The datasets (heterogeneous multi-relation graphs, stored as .mat files) are
 distributed with CARE-GNN: https://github.com/YingtongDou/CARE-GNN
-Download them per that repo's instructions and place under ../data/.
+The .mat files (YelpChi.mat, Amazon.mat) live under ../data/ (gitignored).
+
+Each .mat holds: 'features' (sparse CSR node features), 'label' (1 = fraud),
+relation adjacency matrices (yelp: net_rur/net_rsr/net_rtr; amazon:
+net_upu/net_usu/net_uvu), and 'homo', the union of all relations.
+
+Split convention (following CARE-GNN's train.py): stratified random split
+with random_state=2. CARE-GNN itself uses 40% train / 60% test with no
+validation set; we carve the 60% remainder into val 20% / test 40% so the
+training loop can do best-val model selection. For Amazon, nodes 0-3304 are
+unlabeled (CARE-GNN excludes them from the split via labels[3305:]); they
+stay in the graph for message passing but appear in no mask.
+
+Features are L2 row-normalized, as in CARE-GNN (`sklearn.preprocessing
+.normalize`).
 """
 
 from pathlib import Path
+
+import numpy as np
+import scipy.io as sio
+import torch
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import normalize
+from torch_geometric.data import Data
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
@@ -14,28 +35,59 @@ RELATIONS = {
     "amazon": ["upu", "usu", "uvu"],
 }
 
+# Amazon nodes 0..3304 are unlabeled (CARE-GNN convention).
+UNLABELED_PREFIX = {"yelp": 0, "amazon": 3305}
 
-def load_yelp():
-    """Load YelpChi (review spam). Labels: 1 = fake review, 0 = genuine.
 
-    Returns a PyG HeteroData (or Data per relation) with node features,
-    edges, labels, and train/val/test masks.
-    """
-    raise NotImplementedError(
-        "Download YelpChi from the CARE-GNN repo (see code/README.md), "
-        "then load yelp_homo.mat / relation .mat files from data/."
+def _load_mat(key: str, filename: str) -> Data:
+    mat_path = DATA_DIR / filename
+    if not mat_path.exists():
+        raise FileNotFoundError(
+            f"{mat_path} not found. Download it from the CARE-GNN repo "
+            "(see code/README.md) and place it under code/data/."
+        )
+    mat = sio.loadmat(mat_path)
+
+    x = torch.from_numpy(normalize(mat["features"].todense().A)).float()
+    y = torch.from_numpy(mat["label"].flatten()).long()
+
+    # 'homo' is the union of all relations; already symmetric, no self-loops.
+    homo = mat["homo"].tocoo()
+    edge_index = torch.from_numpy(np.vstack([homo.row, homo.col])).long()
+
+    num_nodes = x.shape[0]
+    labeled_idx = np.arange(UNLABELED_PREFIX[key], num_nodes)
+    labeled_y = y[labeled_idx].numpy()
+
+    # Stratified 40% train / 60% rest (CARE-GNN), then rest -> 20% val / 40% test.
+    idx_train, idx_rest = train_test_split(
+        labeled_idx, stratify=labeled_y, test_size=0.60, random_state=2, shuffle=True
+    )
+    idx_val, idx_test = train_test_split(
+        idx_rest,
+        stratify=y[idx_rest].numpy(),
+        test_size=2 / 3,
+        random_state=2,
+        shuffle=True,
     )
 
+    masks = {}
+    for split, idx in [("train", idx_train), ("val", idx_val), ("test", idx_test)]:
+        mask = torch.zeros(num_nodes, dtype=torch.bool)
+        mask[torch.from_numpy(np.asarray(idx))] = True
+        masks[f"{split}_mask"] = mask
 
-def load_amazon():
-    """Load Amazon fraud dataset. Labels: 1 = fraudulent reviewer.
+    return Data(x=x, edge_index=edge_index, y=y, **masks)
 
-    Same return convention as load_yelp().
-    """
-    raise NotImplementedError(
-        "Download Amazon from the CARE-GNN repo (see code/README.md), "
-        "then load amazon_homo.mat / relation .mat files from data/."
-    )
+
+def load_yelp() -> Data:
+    """Load YelpChi (review spam). Labels: 1 = fake review, 0 = genuine."""
+    return _load_mat("yelp", "YelpChi.mat")
+
+
+def load_amazon() -> Data:
+    """Load Amazon fraud dataset. Labels: 1 = fraudulent reviewer."""
+    return _load_mat("amazon", "Amazon.mat")
 
 
 def load_dataset(name: str):
