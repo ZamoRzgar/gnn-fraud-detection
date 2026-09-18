@@ -8,6 +8,13 @@ Each .mat holds: 'features' (sparse CSR node features), 'label' (1 = fraud),
 relation adjacency matrices (yelp: net_rur/net_rsr/net_rtr; amazon:
 net_upu/net_usu/net_uvu), and 'homo', the union of all relations.
 
+The returned Data object carries both the union graph ('edge_index', from
+'homo') and the per-relation graphs ('relation_edge_index', a dict mapping
+relation name -> [2, E] long tensor). Relation matrices are symmetrized and
+stripped of self-loops; in practice they ship symmetric with zero diagonal.
+Models that only need the flat graph (GCNBaseline) use 'edge_index';
+multi-relation models (SemiGNN, ImbalanceAwareGNN) use 'relation_edge_index'.
+
 Split convention (following CARE-GNN's train.py): stratified random split
 with random_state=2. CARE-GNN itself uses 40% train / 60% test with no
 validation set; we carve the 60% remainder into val 20% / test 40% so the
@@ -55,6 +62,20 @@ def _load_mat(key: str, filename: str) -> Data:
     homo = mat["homo"].tocoo()
     edge_index = torch.from_numpy(np.vstack([homo.row, homo.col])).long()
 
+    # Per-relation graphs for multi-relation models. Symmetrize and drop
+    # self-loops defensively (the shipped matrices are already symmetric
+    # with zero diagonal).
+    relation_edge_index = {}
+    for rel in RELATIONS[key]:
+        adj = mat[f"net_{rel}"].tocsr()
+        adj = (adj + adj.T).tocsr()
+        adj.setdiag(0)
+        adj.eliminate_zeros()
+        coo = adj.tocoo()
+        relation_edge_index[rel] = torch.from_numpy(
+            np.vstack([coo.row, coo.col])
+        ).long()
+
     num_nodes = x.shape[0]
     labeled_idx = np.arange(UNLABELED_PREFIX[key], num_nodes)
     labeled_y = y[labeled_idx].numpy()
@@ -77,7 +98,13 @@ def _load_mat(key: str, filename: str) -> Data:
         mask[torch.from_numpy(np.asarray(idx))] = True
         masks[f"{split}_mask"] = mask
 
-    return Data(x=x, edge_index=edge_index, y=y, **masks)
+    return Data(
+        x=x,
+        edge_index=edge_index,
+        y=y,
+        relation_edge_index=relation_edge_index,
+        **masks,
+    )
 
 
 def load_yelp() -> Data:
