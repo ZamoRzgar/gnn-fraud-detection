@@ -10,17 +10,23 @@
 \usepackage{graphicx}
 \usepackage{textcomp}
 \usepackage{xcolor}
+\usepackage{CJKutf8}
 
 \begin{document}
 
 \title{Graph Neural Networks for Fraud Detection: A Survey and an
 Imbalance-Aware Approach}
 
-\author{\IEEEauthorblockN{Author Name}
-\IEEEauthorblockA{\textit{Department of Computer Science} \\
-\textit{University Name}\\
-City, Country \\
-email@example.com}
+\author{\IEEEauthorblockN{Zamo Rzgar Ahmed}
+\IEEEauthorblockA{\textit{Department of Software Engineering} \\
+\textit{Beihang University (BUAA)}\\
+Beijing, China \\
+lb2606201@buaa.edu.cn}
+\and
+\IEEEauthorblockN{Course Instructor: \begin{CJK}{UTF8}{gbsn}张日崇\end{CJK} (Richong Zhang)}
+\IEEEauthorblockA{\textit{Course: Data Mining} \\
+\textit{Beihang University (BUAA)}\\
+Beijing, China}
 }
 
 \maketitle
@@ -55,23 +61,89 @@ camouflage along both feature and relation dimensions. This project studies
 GNN-based fraud detectors that explicitly address these challenges.
 
 \section{Related Work}
-\subsection{Graph-based Fraud and Anomaly Detection}
-FRAUDAR~\cite{DBLP:conf/kdd/HooiSBSSF16} detects dense subgraphs (a hallmark
-of lockstep fraudulent behavior) while remaining robust to camouflage edges
-added to honest nodes. Ma et al.~\cite{DBLP:journals/tkde/MaWXYZSXA23} provide
-a comprehensive survey of deep learning approaches to graph anomaly detection,
-organizing methods by the type of anomalies (node, edge, subgraph) and model
-architecture.
+\subsection{Graph-based Fraud Detection without Deep Learning}
+A long line of work detects fraud through purely structural signals:
+groups of fraudulent accounts act in lockstep, creating unusually dense
+blocks in the adjacency matrix of, e.g., a user--product review graph.
+Density-based detectors exploit exactly this signal, but fraudsters
+evade them through \emph{camouflage}: adding edges to honest, popular
+targets so as to ``look normal.'' FRAUDAR~\cite{DBLP:conf/kdd/HooiSBSSF16}
+is the representative method of this family. It detects dense subgraphs
+with a greedy, near-linear-time algorithm whose suspiciousness metric is
+designed to be robust to camouflage edges, and it provides provable,
+data-dependent bounds on the amount of fraud that can remain
+undetected on a given graph. Such methods are scalable and effective,
+but they ignore node features and the (scarce) available labels, which
+limits their accuracy on attributed graphs.
+
+\subsection{Deep Graph Anomaly Detection}
+Ma et al.~\cite{DBLP:journals/tkde/MaWXYZSXA23} systematize deep learning
+approaches to graph anomaly detection, organizing methods by the
+anomalous object they target (node, edge, subgraph, or graph level) and
+by architecture. Their survey highlights two challenges that are central
+to fraud detection and to this work: (1) extreme \emph{class imbalance},
+since anomalies are by definition rare, and (2) \emph{camouflage}, since
+adversarial anomalies deliberately resemble normal instances. Fraud
+detection on review or transaction networks corresponds to node-level
+anomaly detection on attributed, multi-relation graphs under
+semi-supervision.
+
 \subsection{GNN-based Fraud Detectors}
-SemiGNN~\cite{DBLP:conf/icdm/WangQL0JWFYZY19} is a semi-supervised graph
-attentive network for financial fraud detection that uses a hierarchical
-attention mechanism and a labeled-neighbor-based regularizer.
-CARE-GNN~\cite{DBLP:conf/cikm/DouL0DPY20} enhances GNN fraud detectors
-against camouflaged fraudsters via a label-aware similarity measure and
-reinforcement-learning-based neighbor selection.
-PC-GNN~\cite{DBLP:conf/www/LiuAQCFYH21} tackles class imbalance by
-``picking'' a balanced neighborhood and ``choosing'' neighbors for
-aggregation, yielding an imbalanced-learning GNN for fraud detection.
+Graph neural networks (GNNs) detect fraudulent nodes by aggregating
+neighborhood information. SemiGNN~\cite{DBLP:conf/icdm/WangQL0JWFYZY19}
+is a semi-supervised graph attentive network developed for
+financial fraud detection: it organizes each node's neighborhood into
+multiple views, applies hierarchical attention (node-level attention
+within a view, then view-level attention across views), and exploits
+unlabeled nodes through a graph-regularized semi-supervised loss.
+CARE-GNN~\cite{DBLP:conf/cikm/DouL0DPY20} directly targets camouflage,
+distinguishing \emph{feature camouflage} and \emph{relation camouflage}.
+It introduces a label-aware similarity measure to identify informative
+neighbors, uses reinforcement learning to adapt a per-relation filtering
+threshold, and aggregates the filtered neighborhoods relation-wise.
+CARE-GNN also released the YelpChi and Amazon fraud benchmarks used in
+this study. Its main drawbacks are the cost and instability of the
+RL-based selector and that class imbalance is handled only implicitly.
+
+\subsection{Imbalance-aware Graph Learning for Fraud Detection}
+Fraudsters typically constitute well under 15\% of nodes, so naive GNN
+training is dominated by the majority class. PC-GNN~\cite{DBLP:conf/www/LiuAQCFYH21}
+addresses this with a ``pick and choose'' strategy: a label-balanced
+sampler \emph{picks} a balanced subset of labeled nodes for each training
+step, and a neighborhood sampler \emph{chooses} neighbors by thresholding
+feature-space distances per relation, so that aggregation uses a balanced
+and informative neighborhood. A complementary, architecture-agnostic
+line of work handles imbalance at the loss level with class-weighted or
+focal objectives; we adopt a class-weighted cross-entropy in this work.
+
+\subsection{Summary and Positioning}
+Table~\ref{tab:methods} contrasts the surveyed methods along the two
+challenges identified above. No single method addresses both camouflage
+and imbalance in a simple, stable way: FRAUDAR handles camouflage but
+ignores features and labels; CARE-GNN handles camouflage with an
+expensive RL selector; PC-GNN handles imbalance at the sampling level
+but ignores camouflage. Our approach (Section~IV) combines a fixed,
+label-supervised similarity filter in the spirit of CARE-GNN --- removing
+the RL machinery --- with PC-GNN-style balanced neighborhood sampling and
+a class-weighted objective, and we ablate each component to measure its
+contribution.
+
+\begin{table}[t]
+\centering
+\caption{Surveyed methods and the challenges they address.}
+\label{tab:methods}
+\begin{tabular}{llcc}
+\hline
+\textbf{Method} & \textbf{Venue} & \textbf{Camouflage} & \textbf{Imbalance} \\
+\hline
+FRAUDAR~\cite{DBLP:conf/kdd/HooiSBSSF16} & KDD'16 & yes & no \\
+SemiGNN~\cite{DBLP:conf/icdm/WangQL0JWFYZY19} & ICDM'19 & no & partial \\
+CARE-GNN~\cite{DBLP:conf/cikm/DouL0DPY20} & CIKM'20 & yes & no \\
+PC-GNN~\cite{DBLP:conf/www/LiuAQCFYH21} & WWW'21 & no & yes \\
+\textbf{Ours} & -- & yes & yes \\
+\hline
+\end{tabular}
+\end{table}
 
 \section{Problem Definition}
 Let $G = (\mathcal{V}, \mathcal{E}, \mathbf{X})$ be an attributed graph with
