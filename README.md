@@ -1,4 +1,4 @@
-# GNN-based Fraud Detection — Data Mining Course Project
+# GNN-based Fraud Detection
 
 **Topic:** Graph Neural Networks for Fraud/Anomaly Detection
 **Task type:** Graph mining — semi-supervised node classification (imbalanced, camouflage-robust)
