@@ -1,4 +1,3 @@
 .venv/
-code/data/
 __pycache__/
 *.pyc
