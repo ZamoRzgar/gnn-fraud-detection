@@ -51,18 +51,27 @@ GB of RAM.
     similarity MLPs are not built at all, so the parameter count is honest,
     and `aux_loss` is a no-op) and `ours_nosampler` (the fraud-boosted
     weighting in (b) disabled — the degree cap stays with uniform sampling,
-    isolating the fraud-bias effect rather than the cap).
+    isolating the fraud-bias effect rather than the cap). The ablation showed
+    the sampler contributes nothing, so the sampler-free configuration is
+    registered as `ours_v2` — the main model going forward. Its filter
+    keep-ratio ρ (`keep_ratio`) is tunable from the CLI (`--rho`).
   - `build_model(name, in_dim)` is the single construction entry point
     (`"gcn"`, `"semignn"`, `"ours"`).
 - `train.py` — argparse entry point (`python -m src.train --dataset …
   --model …`). Sets seeds, loads the dataset, builds the model, runs the
-  training loop: `CrossEntropyLoss` with inverse-class-frequency weights
-  (plus `aux_weight * model.aux_loss(data)` when the model exposes one and
-  `--aux_weight > 0`), Adam, per-epoch validation by AUROC, keeps the
+  training loop: classification loss is either `CrossEntropyLoss` or focal
+  loss (`--loss {ce,focal}`, focusing parameter `--gamma`), in both cases
+  composed with inverse-class-frequency weights unless `--no_cw` (plus
+  `aux_weight * model.aux_loss(data)` when the model exposes one and
+  `--aux_weight > 0`). Adam, per-epoch validation by AUROC, keeps the
   best-val state dict, and evaluates it on the test mask at the end. The
   forward call is model-agnostic (`model_forward`): it inspects the model's
   `uses_relations` / `needs_labels` class flags to decide which graph and
-  label tensors to pass.
+  label tensors to pass. `--rho` sets the similarity-filter keep ratio and
+  is passed only to the `ours*` models. Every run appends its config and
+  metrics to `code/results/results.csv`; `src/table.py` renders best-run and
+  mean±std-across-seeds tables grouped by (dataset, model, class weighting,
+  rho, loss).
 - `evaluate.py` — thin wrappers over sklearn: `auroc`, `auprc`,
   `f1_macro`, `recall_at_k`. All take numpy arrays and return floats.
 

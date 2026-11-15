@@ -398,14 +398,17 @@ class ImbalanceAwareGNN(nn.Module):
 
 
 def build_model(name: str, in_dim: int, **kwargs) -> nn.Module:
-    # name -> (class, fixed constructor kwargs); the two ours_* entries are
-    # ablation variants of ImbalanceAwareGNN.
+    # name -> (class, fixed constructor kwargs); the ours_* entries are
+    # ablation variants of ImbalanceAwareGNN. "ours_v2" is the sampler-free
+    # main model (the ablation showed the balanced sampler contributes
+    # nothing); its keep_ratio (rho) is tunable via kwargs from train.py.
     models = {
         "gcn": (GCNBaseline, {}),
         "semignn": (SemiGNN, {}),
         "ours": (ImbalanceAwareGNN, {}),
         "ours_nofilter": (ImbalanceAwareGNN, {"use_filter": False}),
         "ours_nosampler": (ImbalanceAwareGNN, {"use_sampler": False}),
+        "ours_v2": (ImbalanceAwareGNN, {"use_sampler": False}),
     }
     if name not in models:
         raise ValueError(f"unknown model: {name!r} (choices: {sorted(models)})")

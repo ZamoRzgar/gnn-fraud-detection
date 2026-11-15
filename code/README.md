@@ -21,7 +21,9 @@ Place the `.mat` files under `data/` (gitignored). See `src/data.py`.
 ```bash
 python -m src.train --dataset yelp --model gcn --epochs 100
 python -m src.train --dataset amazon --model semignn --epochs 100
-python -m src.train --dataset yelp --model ours --epochs 100
+# main model (sampler-free) with a tuned filter keep-ratio:
+python -m src.train --dataset yelp --model ours_v2 --rho 0.5 --epochs 100
+python -m src.train --dataset yelp --model ours_v2 --loss focal --gamma 2.0
 # ablation variants of the proposed model:
 python -m src.train --dataset yelp --model ours_nofilter --epochs 100
 python -m src.train --dataset yelp --model ours_nosampler --epochs 100
@@ -29,12 +31,16 @@ python -m src.train --dataset yelp --model ours_nosampler --epochs 100
 
 Models: `gcn` (2-layer GCN on the flattened homo graph), `semignn`
 (multi-view hierarchical attention + semi-supervised graph loss; aux loss
-weight via `--aux_weight`, 0 disables), `ours` (imbalance- and
-camouflage-aware multi-relation GNN; CARE-GNN-style similarity filtering +
-PC-GNN-style balanced sampling), and its ablations `ours_nofilter`
-(similarity filtering removed) and `ours_nosampler` (fraud-bias of the
-sampler removed, uniform sampling within the same degree cap). Every run
-appends its config + metrics to `results/results.csv`.
+weight via `--aux_weight`, 0 disables), `ours_v2` (the main model:
+imbalance- and camouflage-aware multi-relation GNN; CARE-GNN-style
+similarity filtering with keep-ratio `--rho`, attention aggregation and
+relation fusion), the original `ours` (adds PC-GNN-style balanced sampling),
+and the ablations `ours_nofilter` (similarity filtering removed) and
+`ours_nosampler` (fraud-bias of the sampler removed, uniform sampling
+within the same degree cap). The classification loss is CE by default or
+focal loss with `--loss focal --gamma G`; class weighting can be disabled
+with `--no_cw`. Every run appends its config + metrics to
+`results/results.csv`; summarize with `python -m src.table [--meanstd|--all]`.
 
 `verify_setup.py` runs a one-pass shape/gradient smoke test for all models
 on both datasets (not a training run).

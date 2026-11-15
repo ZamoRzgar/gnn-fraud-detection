@@ -26,7 +26,14 @@ def parse_args():
     p.add_argument("--dataset", choices=["yelp", "amazon"], required=True)
     p.add_argument(
         "--model",
-        choices=["gcn", "semignn", "ours", "ours_nofilter", "ours_nosampler"],
+        choices=[
+            "gcn",
+            "semignn",
+            "ours",
+            "ours_nofilter",
+            "ours_nosampler",
+            "ours_v2",
+        ],
         default="gcn",
     )
     p.add_argument("--epochs", type=int, default=100)
@@ -45,6 +52,24 @@ def parse_args():
         help="disable class-weighted cross-entropy; with a sampler model this "
         "makes balanced sampling the only imbalance mechanism",
     )
+    p.add_argument(
+        "--rho",
+        type=float,
+        default=0.5,
+        help="similarity-filter keep ratio (only used by the ours* models)",
+    )
+    p.add_argument(
+        "--loss",
+        choices=["ce", "focal"],
+        default="ce",
+        help="classification loss: cross-entropy or focal loss",
+    )
+    p.add_argument(
+        "--gamma",
+        type=float,
+        default=2.0,
+        help="focal-loss focusing parameter (only used with --loss focal)",
+    )
     return p.parse_args()
 
 
@@ -59,6 +84,19 @@ def model_forward(model, data):
         kwargs["y"] = data.y
         kwargs["train_mask"] = data.train_mask
     return model(data.x, **kwargs)
+
+
+def classification_loss(logits, target, class_weight, loss_name, gamma):
+    """Classification loss on the given nodes. "ce" is plain (optionally
+    class-weighted) cross-entropy. "focal" is the standard multi-class focal
+    loss FL = -(1 - p_t)^gamma * log(p_t), composed with the class-weight
+    tensor (alpha-balancing) when class_weight is not None."""
+    if loss_name == "ce":
+        return F.cross_entropy(logits, target, weight=class_weight)
+    ce = F.cross_entropy(logits, target, weight=class_weight, reduction="none")
+    # p_t must come from the UNWEIGHTED CE: with weight=..., exp(-ce) != p_t
+    p_t = torch.exp(-F.cross_entropy(logits, target, reduction="none"))
+    return ((1.0 - p_t) ** gamma * ce).mean()
 
 
 def evaluate_split(model, data, mask):
@@ -84,7 +122,10 @@ def main():
     np.random.seed(args.seed)
 
     data = load_dataset(args.dataset)
-    model = build_model(args.model, in_dim=data.num_features, hidden_dim=args.hidden)
+    model_kwargs = {"hidden_dim": args.hidden}
+    if args.model.startswith("ours"):  # only ImbalanceAwareGNN accepts keep_ratio
+        model_kwargs["keep_ratio"] = args.rho
+    model = build_model(args.model, in_dim=data.num_features, **model_kwargs)
 
     # Inverse-class-frequency weights (computed on the training split) to
     # counter the strong imbalance toward the benign class. --no_cw disables
@@ -102,8 +143,8 @@ def main():
         model.train()
         optimizer.zero_grad()
         logits = model_forward(model, data)
-        loss = F.cross_entropy(
-            logits[data.train_mask], y_train, weight=class_weight
+        loss = classification_loss(
+            logits[data.train_mask], y_train, class_weight, args.loss, args.gamma
         )
         if args.aux_weight > 0 and hasattr(model, "aux_loss"):
             loss = loss + args.aux_weight * model.aux_loss(data)
@@ -143,6 +184,9 @@ def save_result(args, best_val_auroc, test):
         "seed": args.seed,
         "aux_weight": args.aux_weight,
         "class_weight": 0 if args.no_cw else 1,
+        "rho": args.rho,
+        "loss": args.loss,
+        "gamma": args.gamma,
         "best_val_auroc": round(best_val_auroc, 4),
         "test_auroc": round(test["auroc"], 4),
         "test_auprc": round(test["auprc"], 4),

@@ -23,20 +23,32 @@ def load_rows():
         return list(csv.DictReader(f))
 
 
+def _group_key(r):
+    """Grouping key; old rows without rho/loss columns get the defaults."""
+    return (
+        r["dataset"],
+        r["model"],
+        r.get("class_weight", "1"),
+        r.get("rho", "0.5"),
+        r.get("loss", "ce"),
+    )
+
+
 def best_rows(rows):
-    """Keep the run with the highest test AUROC per (dataset, model, class_weight)."""
+    """Keep the run with the highest test AUROC per group (dataset, model,
+    class_weight, rho, loss)."""
     best = {}
     for r in rows:
-        key = (r["dataset"], r["model"], r.get("class_weight", "1"))
+        key = _group_key(r)
         if key not in best or float(r["test_auroc"]) > float(best[key]["test_auroc"]):
             best[key] = r
-    return sorted(best.values(), key=lambda r: (r["dataset"], r["model"], r.get("class_weight", "1")))
+    return sorted(best.values(), key=_group_key)
 
 
 def print_table(rows):
-    header = ["dataset", "model", "seed", "aux_w", "cw"] + METRICS
+    header = ["dataset", "model", "seed", "aux_w", "cw", "rho", "loss"] + METRICS
     cols = {"dataset": "dataset", "model": "model", "seed": "seed", "aux_w": "aux_weight",
-            "cw": "class_weight", **{m: m for m in METRICS}}
+            "cw": "class_weight", "rho": "rho", "loss": "loss", **{m: m for m in METRICS}}
     lines = ["| " + " | ".join(header) + " |",
              "|" + "|".join("---" for _ in header) + "|"]
     for r in rows:
@@ -45,14 +57,15 @@ def print_table(rows):
 
 
 def meanstd_rows(rows):
-    """Aggregate runs across seeds: mean ± std per (dataset, model, class_weight)."""
+    """Aggregate runs across seeds: mean ± std per group (dataset, model,
+    class_weight, rho, loss)."""
     groups = {}
     for r in rows:
-        key = (r["dataset"], r["model"], r.get("class_weight", "1"))
-        groups.setdefault(key, []).append(r)
+        groups.setdefault(_group_key(r), []).append(r)
     out = []
-    for (dataset, model, cw), rs in sorted(groups.items()):
-        row = {"dataset": dataset, "model": model, "cw": cw, "n": str(len(rs))}
+    for (dataset, model, cw, rho, loss), rs in sorted(groups.items()):
+        row = {"dataset": dataset, "model": model, "cw": cw, "rho": rho,
+               "loss": loss, "n": str(len(rs))}
         for m in METRICS:
             vals = [float(r[m]) for r in rs]
             std = statistics.stdev(vals) if len(vals) > 1 else 0.0
@@ -62,7 +75,7 @@ def meanstd_rows(rows):
 
 
 def print_meanstd(rows):
-    header = ["dataset", "model", "cw", "n"] + METRICS
+    header = ["dataset", "model", "cw", "rho", "loss", "n"] + METRICS
     lines = ["| " + " | ".join(header) + " |",
              "|" + "|".join("---" for _ in header) + "|"]
     for r in rows:
